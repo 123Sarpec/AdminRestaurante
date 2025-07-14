@@ -1,8 +1,8 @@
 import './css/main.css';
 import { Routes, Route } from 'react-router';
 
-import FirebaseContext from './firebase/context';  // ✅ default import
-import firebase from './firebase/firebase';        // ✅ instancia firebase
+import FirebaseContext from './firebase/context';
+import firebase from './firebase/firebase'; // ✅ Solo funciona si exportaste default
 
 import Ordenes from './components/paginas/Ordenes';
 import Menu from './components/paginas/Menu';

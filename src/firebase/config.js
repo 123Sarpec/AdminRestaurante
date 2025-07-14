@@ -1,6 +1,7 @@
 // src/firebase/config.js
-import { initializeApp } from 'firebase/app';
+import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getFirestore } from 'firebase/firestore';
+import { getStorage } from 'firebase/storage';
 
 const firebaseConfig = {
   apiKey: "AIzaSyDvi3VloZ6zNcVTcG90Q6I7QRDeHgqZFGg",
@@ -12,7 +13,11 @@ const firebaseConfig = {
   measurementId: "G-NVW32347J6"
 };
 
-const app = initializeApp(firebaseConfig);
-const db = getFirestore(app);
+// Solo inicializa si no hay apps existentes
+const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 
-export { db }; // ✅ Solo exportamos db (no default)
+// Exportar instancia
+const db = getFirestore(app);
+const storage = getStorage(app);
+
+export { db, storage };
