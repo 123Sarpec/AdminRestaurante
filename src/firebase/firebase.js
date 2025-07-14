@@ -1,14 +1,19 @@
 // src/firebase/firebase.js
-import { initializeApp } from 'firebase/app';
-import { getFirestore } from 'firebase/firestore';
-import firebaseConfig from './config'; // Asegúrate de que este archivo exporta el objeto de configuración
+import { db } from './config';
+import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 
-class Firebase {
-  constructor() {
-    this.app = initializeApp(firebaseConfig);
-    this.db = getFirestore(this.app);
+// Esta función se exporta para enviar órdenes
+export const enviarOrdenAFirebase = async (pedido, total) => {
+  try {
+    await addDoc(collection(db, "ordenes"), {
+      pedido,
+      total,
+      estado: 'recibido',
+      fecha: serverTimestamp(),
+    });
+    return true;
+  } catch (error) {
+    console.error("Error al enviar orden:", error);
+    return false;
   }
-}
-
-const firebase = new Firebase();
-export default firebase;
+};

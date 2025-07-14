@@ -1,55 +1,34 @@
-import React, { useEffect, useState, useContext } from 'react';
-import { FirebaseContext } from '../../firebase';
-import Orden from '../ui/Orden';
-
-// import firebase from 'firebase/compat/app';
+import React, { useEffect, useState } from 'react';
+import { db } from '../../firebase/config';
+import { collection, onSnapshot } from 'firebase/firestore';
 
 const Ordenes = () => {
-
-  // context con  las operaciones de firebase 
-  const { Firebase } = useContext(FirebaseContext);
-
-
-  // state con la ordenes 
-  const [ordenes, guardarOrdenes] = useState([]);
-
-
-
+  const [ordenes, setOrdenes] = useState([]);
 
   useEffect(() => {
-    const obtenerOrdenes = () => {
-      firebase.db.collection('ordenes').where('completado', "==", false).onSnapshot(manejarSnapshot);
-
-    }
-    obtenerOrdenes();
-  }, []);
-
-
-  function manejarSnapshot(snapshot) {
-    const ordenes = snapshot.docs.map(doc => {
-      return {
-        id: doc.id,
-        ...doc.data()
-      }
+    const unsubscribe = onSnapshot(collection(db, 'ordenes'), (snapshot) => {
+      const ordenesData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setOrdenes(ordenesData);
     });
-    guardarOrdenes(ordenes);
-  }
+
+    return () => unsubscribe();
+  }, []);
 
   return (
     <>
-      <h1 className='text-3xl font-light mb-4'>Ordenes</h1>
-      <div className=''>
-
-        {ordenes.map(orden => (
-          <Orden
-            key={orden.id}
-            orden={orden}
-          />
-        ))}
-      </div>
+      <h1 className="text-3xl font-light mb-4">Órdenes Recibidas</h1>
+      {ordenes.map((orden) => (
+        <div key={orden.id} className="p-4 shadow mb-3 bg-white">
+          <p><strong>ID:</strong> {orden.id}</p>
+          {orden.pedido.map((item, index) => (
+            <p key={index}>- {item.nombre} x {item.cantidad} (Q{item.precio})</p>
+          ))}
+          <p><strong>Total:</strong> Q{orden.total}</p>
+          <p><strong>Estado:</strong> {orden.estado}</p>
+        </div>
+      ))}
     </>
-  )
-
+  );
 };
 
 export default Ordenes;

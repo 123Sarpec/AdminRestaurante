@@ -949,13 +949,6 @@ video {
   --tw-ring-color: rgb(59 130 246 / var(--tw-ring-opacity, 1));
 }
 
-@media (min-width: 640px) {
-
-  .sm\:w-1 {
-    width: 0.25rem;
-  }
-}
-
 @media (min-width: 768px) {
 
   .md\:flex {
