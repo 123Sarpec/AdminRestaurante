@@ -7,6 +7,7 @@ import firebase from './firebase/firebase'; // ✅ Solo funciona si exportaste d
 import Ordenes from './components/paginas/Ordenes';
 import Menu from './components/paginas/Menu';
 import NuevoPlato from './components/paginas/NuevoPlato';
+import ReporteVentas from './components/paginas/ReporteVentas';
 import Sidebar from './components/ui/Sidebar';
 
 function App() {
@@ -19,6 +20,7 @@ function App() {
             <Route path="/" element={<Ordenes />} />
             <Route path="/menu" element={<Menu />} />
             <Route path="/nuevoplato" element={<NuevoPlato />} />
+              <Route path="/reporte" element={<ReporteVentas />} /> 
           </Routes>
         </main>
       </div>
