@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import {
   collection,
   onSnapshot,
@@ -6,56 +6,103 @@ import {
   updateDoc,
   deleteDoc,
   getDoc,
-  addDoc
+  addDoc,
+  query,
+  where,
+  getDocs
 } from 'firebase/firestore';
 import firebase from '../../firebase/firebase';
 
 export default function Ordenes() {
   const [ordenes, setOrdenes] = useState([]);
-  const [tiempos, setTiempos] = useState({});
+  const [ordenActiva, setOrdenActiva] = useState(null); 
 
   useEffect(() => {
     const unsubscribe = onSnapshot(collection(firebase.db, 'ordenes'), snapshot => {
-      const data = snapshot.docs.map(d => ({
-        id: d.id,
-        ...d.data()
-      }));
+      const data = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
       setOrdenes(data);
     });
     return unsubscribe;
   }, []);
 
-  const definirTiempoEntrega = async (id) => {
-    const tiempo = tiempos[id];
-    if (!tiempo) return alert('Ingresa un tiempo válido');
-
+  // --- Helper: registra en 'ventas' si no existe ---
+  const registrarEnVentas = useCallback(async (id) => {
     const docRef = doc(firebase.db, 'ordenes', id);
-    await updateDoc(docRef, {
-      tiempoEntrega: parseInt(tiempo),
-      creado: Date.now(),
-      estado: 'en progreso'
+    const snap = await getDoc(docRef);
+    if (!snap.exists()) return;
+
+    // ¿ya está registrada en ventas?
+    const q = query(collection(firebase.db, 'ventas'), where('ordenId', '==', id));
+    const existentes = await getDocs(q);
+    if (!existentes.empty) return; // evitar duplicado
+
+    const orden = snap.data();
+
+    await addDoc(collection(firebase.db, 'ventas'), {
+      ...orden,
+      ordenId: id,
+      fecha: new Date().toISOString(),
+      creado: orden.creado || Date.now()
     });
-  };
+
+    // marca en la orden para no intentar registrarla de nuevo
+    try {
+      await updateDoc(docRef, { registradaEnVentas: true });
+    } catch (_) {
+      // opcional: si no quieres escribir este flag, puedes omitirlo
+    }
+  }, []);
+
+  // Definir tiempo SOLO con botones: ahora también registra en ventas
+  const definirTiempoEntrega = useCallback(
+    async (id, minutos) => {
+      if (!minutos || minutos <= 0) return;
+      const ref = doc(firebase.db, 'ordenes', id);
+
+      await updateDoc(ref, {
+        tiempoEntrega: parseInt(minutos, 10),
+        creado: Date.now(),          // como antes, para que el app/reporte funcione
+        estado: 'en progreso'
+      });
+
+      // registra en ventas inmediatamente (sin esperar "marcar como lista")
+      await registrarEnVentas(id);
+    },
+    [registrarEnVentas]
+  );
+
+  // Atajos de teclado:  para la tarjeta bajo el mouse
+  useEffect(() => {
+    const handler = (e) => {
+      if (!ordenActiva) return;
+      const mapa = { '1': 1, '2': 2, '4': 4, '5': 5 ,'10': 10, '15': 15, '20': 20, '30': 30 };
+      const minutos = mapa[e.key];
+      if (minutos) definirTiempoEntrega(ordenActiva, minutos);
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [ordenActiva, definirTiempoEntrega]);
+
+  // Respaldo: si llega una orden con tiempoEntrega y aún no fue registrada, registrar
+  useEffect(() => {
+    if (!Array.isArray(ordenes) || ordenes.length === 0) return;
+    const pendientes = ordenes.filter(o => o.tiempoEntrega && !o.registradaEnVentas);
+    pendientes.forEach(o => registrarEnVentas(o.id));
+  }, [ordenes, registrarEnVentas]);
 
   const marcarOrdenLista = async (id) => {
     const docRef = doc(firebase.db, 'ordenes', id);
     const snapshot = await getDoc(docRef);
-
     if (!snapshot.exists()) return alert('La orden no existe');
 
-    const orden = snapshot.data();
-
-    // 1. Actualiza estado en ordenes
+    // 1) Actualiza estado en ordenes
     await updateDoc(docRef, {
       ordenLista: true,
       estado: 'lista'
     });
 
-    // 2. Guarda copia en 'ventas'
-    await addDoc(collection(firebase.db, 'ventas'), {
-      ...orden,
-      fecha: new Date().toISOString()
-    });
+    // 2) Asegura registro en ventas (no duplica)
+    await registrarEnVentas(id);
   };
 
   const eliminarOrden = async (id) => {
@@ -63,6 +110,42 @@ export default function Ordenes() {
       await deleteDoc(doc(firebase.db, 'ordenes', id));
     }
   };
+
+  // Botonera rápida (respetando tu estilo general)
+  const BotoneraRapida = ({ onSelect }) => (
+    <div style={{
+      display: 'flex',
+      gap: 8,
+      flexWrap: 'wrap',
+      background: '#ffffff',
+      border: '1px dashed #d1d5db',
+      borderRadius: 8,
+      padding: 10,
+      marginBottom: 12
+    }}>
+      {[1, 2, 4, 5, 10, 15, 20, 30].map(m => (
+        <button
+          key={m}
+          onClick={() => onSelect(m)}
+          style={{
+            backgroundColor: '#111827',
+            color: '#fff',
+            border: 'none',
+            padding: '6px 10px',
+            borderRadius: 6,
+            cursor: 'pointer',
+            fontSize: 13
+          }}
+          title={`Asignar ${m} min`}
+        >
+          {m} min
+        </button>
+      ))}
+      <span style={{ fontSize: 12, color: '#6b7280' }}>
+        (Defina el tiempo de entrega.)
+      </span>
+    </div>
+  );
 
   return (
     <div style={{ padding: '20px' }}>
@@ -72,6 +155,8 @@ export default function Ordenes() {
         ordenes.map(o => (
           <div
             key={o.id}
+            onMouseEnter={() => setOrdenActiva(o.id)}
+            onMouseLeave={() => setOrdenActiva(null)}
             style={{
               border: '1px solid #e5e7eb',
               borderRadius: '10px',
@@ -81,6 +166,17 @@ export default function Ordenes() {
               boxShadow: '0 2px 5px rgba(0, 0, 0, 0.05)'
             }}
           >
+            {/* Botonera rápida ARRIBA (afuera de los datos de la orden) */}
+            {!o.tiempoEntrega && (
+              <>
+                <p style={{ margin: '0 0 6px 0', fontWeight: 'bold' }}>
+                  Definir tiempo
+                </p>
+                <BotoneraRapida onSelect={(m) => definirTiempoEntrega(o.id, m)} />
+              </>
+            )}
+
+            {/* Encabezado con ID y acciones */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <p><strong>ID:</strong> <span style={{ color: '#f59e0b' }}>{o.id}</span></p>
 
@@ -102,6 +198,7 @@ export default function Ordenes() {
               )}
             </div>
 
+            {/* Detalle de pedido */}
             <ul style={{ marginTop: '10px' }}>
               {o.pedido?.map(item => (
                 <li key={item.id}>
@@ -112,44 +209,12 @@ export default function Ordenes() {
 
             <p style={{ marginTop: '10px' }}><strong>Total:</strong> Q{o.total}</p>
 
-            {!o.tiempoEntrega && (
-              <>
-                <label><strong>Tiempo de Entrega</strong></label>
-                <input
-                  type="number"
-                  placeholder="Minutos"
-                  value={tiempos[o.id] || ''}
-                  onChange={(e) => setTiempos({ ...tiempos, [o.id]: e.target.value })}
-                  style={{
-                    padding: '8px',
-                    marginTop: '5px',
-                    marginBottom: '10px',
-                    display: 'block',
-                    width: '100%',
-                    borderRadius: '5px',
-                    border: '1px solid #d1d5db'
-                  }}
-                />
-                <button
-                  onClick={() => definirTiempoEntrega(o.id)}
-                  style={{
-                    backgroundColor: '#1f2937',
-                    color: 'white',
-                    padding: '8px',
-                    width: '100%',
-                    borderRadius: '5px',
-                    border: 'none',
-                    cursor: 'pointer'
-                  }}
-                >
-                  DEFINIR TIEMPO
-                </button>
-              </>
-            )}
-
+            {/* Estado luego de asignar tiempo */}
             {o.tiempoEntrega && !o.ordenLista && (
               <>
-                <p style={{ marginTop: '10px' }}><strong>Entrega en:</strong> {o.tiempoEntrega} min</p>
+                <p style={{ marginTop: '10px' }}>
+                  <strong>Entrega en:</strong> {o.tiempoEntrega} min
+                </p>
                 <button
                   onClick={() => marcarOrdenLista(o.id)}
                   style={{
@@ -169,7 +234,7 @@ export default function Ordenes() {
 
             {o.ordenLista && (
               <p style={{ color: '#000000', fontWeight: 'bold', marginTop: '10px' }}>
-                 ORDEN LISTA PARA RECOGER
+                ORDEN LISTA PARA RECOGER
               </p>
             )}
           </div>
